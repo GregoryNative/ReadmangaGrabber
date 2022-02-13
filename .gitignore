@@ -1,3 +1,7 @@
 .DS_Store
 
 builds/*
+manga/*
+grabber_config.json
+grabber_log.log
+.idea/*
