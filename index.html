@@ -47,11 +47,11 @@
                                 <label class="form-check-label" for="optPDF">Создать PDF</label>
                             </div>
                             <div class="form-check form-check-inline form-switch">
-                                <input class="form-check-input opt-data" type="checkbox" id="optCBZ" onchange="checkDeleteOption();">
+                                <input class="form-check-input opt-data" type="checkbox" id="optCBZ" checked onchange="checkDeleteOption();">
                                 <label class="form-check-label" for="optCBZ">Создать CBZ</label>
                             </div>
                             <div class="form-check form-check-inline form-switch">
-                                <input class="form-check-input opt-data" type="checkbox" id="optDEL" disabled>
+                                <input class="form-check-input opt-data" type="checkbox" id="optDEL" checked>
                                 <label class="form-check-label" for="optDEL">Удалить скачанные файлы после создания PDF/CBZ</label>
                             </div>
                         </div>
@@ -85,6 +85,13 @@
                         <hr />
                         <div class="mb-3">
                             <label for="formFile" class="form-label">Скачать главы:</label>
+                            <label class="form-label alert alert-success" style="padding: 4px 8px;" id="lastChapterLbl" hidden></label>
+                            <br />
+                            <div class="mb-3 flex row form-check-inline">
+                                <input type="text" class="form-control opt-data" id="chaptersCheckbox">
+                                <button type="button" class="btn btn-success" id="addChaptersToDownloadBtn" onclick="addChaptersToDownload();">Выбрать главы</button>
+                            </div>
+
                             <div class="row row-cols-4" id="chaptersList"></div>
                         </div>
                         <div class="mb-3" style="text-align: center;">
@@ -161,6 +168,9 @@
     </div>
 
     <script>
+        // show history
+        showHistory();
+
         var ws = new WebSocket("ws://127.0.0.1:8888/ws");
 
         ws.onmessage = function(msg) {
@@ -259,11 +269,20 @@
             $('#errorSection').hide();
             $('#waitSection').show();
             $('#chaptersList').html("");
+            const mangaURL = $('#mangaURL').val();
 
-            $.get("/getChaptersList", { "mangaURL": $('#mangaURL').val() }, function(data) {
+            const history = getStorageHistory();
+
+            if (!history.includes(mangaURL)) {
+                history.push(mangaURL);
+                setStorageHistory(history);
+            }
+
+            $.get("/getChaptersList", { "mangaURL": mangaURL }, function(data) {
                 switch (data.status) {
                     case 'success':
                         $.each(data.payload, function(i, item) {
+                            console.log('each.data.payload', i, item);
                             var html = "<div class='col'><div class='form-check'><input class='form-check-input single-chapter' type='checkbox' id='"+item.path+"' value='"+item.path+"'><label class='form-check-label' for='"+item.path+"'>"+item.title+"</label></div></div>";
 
                             $('#chaptersList').append(html);
@@ -271,6 +290,17 @@
 
                         $('#waitSection').hide();
                         $('#chaptersSection').show();
+
+                        const lastChapter = getStorageLastDownloadedChapter();
+                        console.log('lastChapter', lastChapter);
+
+                        if (lastChapter) {
+                            const lastChapterLbl = document.getElementById('lastChapterLbl');
+                            lastChapterLbl.innerText = lastChapter;
+                            lastChapterLbl.hidden = false;
+                        }
+
+
                         break;
                     case 'error':
                         $('#errorData').html(data.payload);
@@ -301,6 +331,10 @@
                 });
             }
 
+            const lastChapter = chapters[chapters.length - 1];
+            setStorageLastDownloadedChapter(lastChapter);
+            console.log('lastChapter.set', lastChapter);
+
             var chaptersJSON = JSON.stringify(chapters);
 
             $.get("/downloadManga", {
@@ -311,6 +345,82 @@
                 "optDEL": optDEL,
                 "selectedChapters": chaptersJSON
             }, function(data) {});
+        }
+
+        function showHistory() {
+            const inputDOM = document.getElementById('mangaURL');
+
+            const history = getStorageHistory();
+
+            history.forEach(function (url) {
+                const el = document.createElement("div");
+                el.style.background = '#198754';
+                el.style.padding = '4px 16px';
+                el.style.borderRadius = '4px';
+                el.style.marginTop = '8px';
+
+                el.innerHTML = `<span style="color: white;">${url}</span>`;
+
+                el.onclick = () => {
+                    inputDOM.value = url;
+                    getChaptersList();
+                };
+
+                insertAfter(inputDOM, el);
+            });
+        }
+
+        function addChaptersToDownload() {
+            const chapterRef = document.getElementById('chaptersCheckbox');
+            const chapter = chapterRef.value;
+
+            Array.from(document.getElementsByClassName('form-check-label')).forEach(el => {
+                const labelText = el.innerText;
+                if (labelText.match(new RegExp(`^${chapter} -.*`))) {
+                    el.previousSibling.checked = true;
+                }
+            });
+
+            chapterRef.value = '';
+        }
+
+        function insertAfter(referenceNode, newNode) {
+            referenceNode.parentNode.insertBefore(newNode, referenceNode.nextSibling);
+        }
+
+        function getStorageHistory() {
+            return storage('history').get([]);
+        }
+
+        function setStorageHistory(history) {
+            return storage('history').set(history);
+        }
+
+        function getStorageLastDownloadedChapter() {
+            return storage('LastDownloadedChapter').get(false);
+        }
+
+        function setStorageLastDownloadedChapter(chapter) {
+            return storage('LastDownloadedChapter').set(chapter);
+        }
+
+        function storage(name) {
+            const storageKey = `readmanga_grabber_${name}`;
+
+            const get = (defaultValue = []) => {
+                return localStorage.getItem(storageKey)
+                    ? JSON.parse(localStorage.getItem(storageKey))
+                    : defaultValue
+            };
+
+            const set = (data) => {
+                localStorage.setItem(storageKey, JSON.stringify(data));
+            };
+
+            return {
+                get,
+                set,
+            };
         }
     </script>
 </body>
